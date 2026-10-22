@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Схема базы данных «ЧёПоел» — ER-диаграмма и Физическая модель</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1120;
+      --panel: #111827;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #10b981;
+      --blue: #3b82f6;
+      --purple: #8b5cf6;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --border: rgba(255, 255, 255, 0.1);
+    }
+    * { box-sizing: border-box; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .canvas-grid-light {
+      background-color: #ffffff;
+      background-image: radial-gradient(#cbd5e1 1.25px, transparent 1.25px);
+      background-size: 24px 24px;
+    }
+    .svg-node {
+      cursor: pointer;
+      user-select: none;
+      transition: filter 0.15s ease;
+    }
+    .svg-node:hover {
+      filter: drop-shadow(0 2px 8px rgba(15, 23, 42, 0.18));
+    }
+    .svg-col-row {
+      cursor: pointer;
+      transition: fill 0.12s ease;
+    }
+    .svg-col-row:hover rect.row-hit {
+      fill: rgba(16, 185, 129, 0.12);
+    }
+    .tab-btn.active {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #052e16;
+      font-weight: 800;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.28);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Компактная верхняя панель: переключение моделей и масштаб -->
+  <header class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-2.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <!-- Переключатель представлений -->
+      <div class="flex flex-wrap items-center gap-1.5 bg-slate-950/90 p-1 rounded-xl border border-slate-800">
+        <button type="button" id="tabBtn-chen" onclick="switchViewTab('chen')" class="tab-btn active px-3.5 py-1.5 rounded-lg text-xs font-bold text-slate-300 transition">
+          🔷 ER-диаграмма
+        </button>
+        <button type="button" id="tabBtn-rel" onclick="switchViewTab('rel')" class="tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold text-slate-300 transition">
+          🗂️ Физическая модель
+        </button>
+      </div>
+
+      <!-- Управление масштабом -->
+      <div class="flex items-center gap-1.5 bg-slate-950/90 p-1 rounded-xl border border-slate-800">
+        <button type="button" onclick="zoomDiagram(-0.15)" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700" title="Уменьшить масштаб">−</button>
+        <span id="zoomLabel" class="text-xs font-mono font-bold text-slate-200 px-2">100%</span>
+        <button type="button" onclick="zoomDiagram(0.15)" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700" title="Увеличить масштаб">+</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Основная рабочая область: Холст диаграммы (Светлый стиль) + Боковая панель с Инспектором и Легендой -->
+  <main id="diagramWorkspace" class="flex-1 flex flex-col">
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-4 relative min-h-[calc(100vh-54px)]">
+      <!-- Интерактивный SVG-холст (Светлый стиль) -->
+      <div id="svgViewportWrap" class="lg:col-span-3 relative overflow-hidden canvas-grid-light select-none min-h-[600px]">
+        <svg id="erSvgCanvas" viewBox="0 0 1500 980" class="w-full h-full block cursor-grab active:cursor-grabbing">
+          <defs id="svgDefs"></defs>
+          <g id="svgPanZoomGroup">
+            <g id="edgesLayer"></g>
+            <g id="nodesLayer"></g>
+          </g>
+        </svg>
+      </div>
+
+      <!-- Боковая панель: Инспектор элемента + Легенда -->
+      <aside class="bg-slate-900/95 border-t lg:border-t-0 lg:border-l border-slate-800 p-4 flex flex-col justify-between overflow-y-auto max-h-[calc(100vh-54px)]">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400">Инспектор элемента</span>
+            <span class="text-[10px] text-slate-400">Нажмите на любой узел или поле</span>
+          </div>
+          <div id="inspectorContent" class="space-y-3">
+            <!-- Заполняется динамически при клике на сущность, связь, атрибут или поле таблицы -->
+          </div>
+        </div>
+
+        <!-- Легенда сбоку -->
+        <div class="mt-6 pt-4 border-t border-slate-800">
+          <div class="text-xs font-bold text-slate-200 mb-2.5">Условные обозначения:</div>
+          <ul class="space-y-2.5 text-xs text-slate-300 leading-relaxed">
+            <li class="flex items-start gap-2.5">
+              <span class="inline-block w-4 h-3 border-2 border-emerald-500 bg-emerald-500/15 rounded-sm mt-0.5 shrink-0"></span>
+              <span><strong>Прямоугольник</strong> — сущность базы данных (таблица предметной области).</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="inline-block w-3.5 h-3.5 border-2 border-amber-500 bg-amber-500/15 rotate-45 mt-1 shrink-0"></span>
+              <span><strong>Ромб</strong> — связь (отношение) между сущностями с указанием кардинальности (<code class="text-amber-300 font-mono">1:1</code>, <code class="text-amber-300 font-mono">1:N</code>, <code class="text-amber-300 font-mono">M:N</code>).</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="inline-block w-4 h-3 border-2 border-blue-500 bg-blue-500/15 rounded-full mt-0.5 shrink-0"></span>
+              <span><strong>Эллипс</strong> — атрибут сущности (поле таблицы). <u>Подчёркнутое имя</u> обозначает первичный ключ (<code class="text-emerald-300 font-mono">PK</code>).</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="inline-block w-4 h-3 border-2 border-dashed border-rose-500 bg-rose-500/15 rounded-full mt-0.5 shrink-0"></span>
+              <span><strong>Пунктирный эллипс</strong> — вычисляемый (производный) атрибут, рассчитываемый динамически.</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-800 text-emerald-100 font-mono text-[10px] font-bold shrink-0 mt-0.5">1:N</span>
+              <span><strong>Линия связи (1:N, 1:1)</strong> — связь таблиц по внешнему ключу (<code class="text-blue-300 font-mono">FK</code>) от родительской записи (<code class="font-mono">1</code>) к дочерним (<code class="font-mono">N</code>).</span>
+            </li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+<script>
+/* ============================================================================
+   СОСТОЯНИЕ ИНТЕРАКТИВНОЙ ДИАГРАММЫ (ТОЛЬКО СВЕТЛЫЙ СТИЛЬ)
+   ============================================================================ */
+let currentTab = 'chen';       // 'chen' | 'rel'
+let zoomLevel = 1.0;
+let panX = 0, panY = 0;
+let selectedNodeId = 'ent_account';
+let selectedAttrId = null;     // ID выбранного атрибута в ER-диаграмме или поля таблицы
+
+/* ============================================================================
+   1. ДАННЫЕ КОНЦЕПТУАЛЬНОЙ МОДЕЛИ (ER-ДИАГРАММА)
+   Каждый атрибут содержит собственное подробное описание и тип данных SQL
+   ============================================================================ */
+function createInitialChenData() {
+  const entities = [
+    {
+      id: 'ent_account', type: 'entity', label: 'ПОЛЬЗОВАТЕЛЬ', sub: 'accounts',
+      x: 740, y: 175, w: 175, h: 56, color: '#10b981',
+      desc: 'Учётная запись пользователя в СУБД PostgreSQL (таблица accounts). Отвечает за идентификацию и аутентификацию пользователя, а также служит корневой родительской сущностью для профиля, суточного дневника и замеров веса.',
+      attrs: [
+        {
+          id: 'a_acc_user', label: 'username', pk: true, dx: -165, dy: -72,
+          sqlType: 'VARCHAR(50) PRIMARY KEY',
+          desc: 'Уникальный логин пользователя (первичный ключ таблицы accounts). Используется для авторизации и связывания всех пользовательских записей в таблицах profiles, daily_logs, weight_logs и products.'
+        },
+        {
+          id: 'a_acc_pass', label: 'pass_hash', pk: false, dx: 0, dy: -88,
+          sqlType: 'CHAR(64) NOT NULL',
+          desc: 'Криптографический хэш пароля по алгоритму SHA-256 с солью (chepoel_salt_v4_). Исходный пароль в открытом виде в базе данных никогда не хранится.'
+        },
+        {
+          id: 'a_acc_name', label: 'display_name', pk: false, dx: 165, dy: -72,
+          sqlType: 'VARCHAR(100) NOT NULL',
+          desc: 'Отображаемое имя пользователя, указанное при создании учётной записи (например, «Денис»). Используется в приветствиях и карточке аккаунта.'
+        },
+        {
+          id: 'a_acc_date', label: 'registered_date', pk: false, dx: 195, dy: -12,
+          sqlType: 'DATE NOT NULL DEFAULT CURRENT_DATE',
+          desc: 'Дата регистрации аккаунта. Служит точкой отсчёта для контроля дисциплины, расчёта непрерывной серии дней (стрика) и проверки пропусков.'
+        }
+      ]
+    },
+    {
+      id: 'ent_profile', type: 'entity', label: 'ПРОФИЛЬ И ЦЕЛИ', sub: 'profiles',
+      x: 240, y: 290, w: 185, h: 56, color: '#3b82f6',
+      desc: 'Персональные настройки пользователя (таблица profiles): целевые нормы КБЖУ, рассчитанные по формуле Миффлина — Сан-Жеора, выбранный режим (снижение, поддержание или набор веса), оформление профиля и запас щитов заморозки.',
+      attrs: [
+        {
+          id: 'a_prof_id', label: 'profile_id', pk: true, dx: -175, dy: -65,
+          sqlType: 'SERIAL PRIMARY KEY',
+          desc: 'Уникальный автоинкрементный идентификатор записи профиля (суррогатный первичный ключ таблицы profiles).'
+        },
+        {
+          id: 'a_prof_mode', label: 'goal_mode', pk: false, dx: -15, dy: -85,
+          sqlType: "VARCHAR(20) CHECK (goal_mode IN ('lose','maintain','gain'))",
+          desc: 'Активный диетологический сценарий пользователя: lose (снижение веса с дефицитом -15%), maintain (поддержание баланса) или gain (набор мышечной массы с профицитом +15%). Определяет алгоритм цветовой оценки дней в календаре.'
+        },
+        {
+          id: 'a_prof_kcal', label: 'kcal_target', pk: false, dx: 145, dy: -75,
+          sqlType: 'INT NOT NULL DEFAULT 2000',
+          desc: 'Суточная норма калорийности рациона (ккал), рассчитанная по формуле Миффлина — Сан-Жеора с учётом пола, возраста, роста, веса и коэффициента физической активности.'
+        },
+        {
+          id: 'a_prof_pfc', label: 'p / f / c', pk: false, dx: -195, dy: 5,
+          sqlType: 'INT NOT NULL (p_target, f_target, c_target)',
+          desc: 'Целевые суточные нормы макронутриентов в граммах: белки (p_target), жиры (f_target) и углеводы (c_target) в пропорции 28% / 28% / 44% от суточной калорийности.'
+        },
+        {
+          id: 'a_prof_shld', label: 'shields', pk: false, dx: -180, dy: 72,
+          sqlType: 'INT NOT NULL DEFAULT 0 (purchased_shields, spent_shield_xp)',
+          desc: 'Количество приобретённых пользователем Щитов заморозки и сумма потраченного на них опыта (по 150 XP за щит). Щиты защищают серию дней от сброса и штрафа -100 XP при пропуске.'
+        },
+        {
+          id: 'a_prof_xp', label: 'xp & level', pk: false, derived: true, dx: 155, dy: 75,
+          sqlType: 'ВЫЧИСЛЯЕМЫЙ АТРИБУТ (Derived)',
+          desc: 'Динамически рассчитываемый суммарный опыт (XP) и текущий уровень профиля. Складывается из записей приёмов пищи (+45 XP), зелёных дней (+140 XP) и нормы воды (+60 XP) за вычетом штрафов за пропуски (-100 XP). С каждым уровнем порог растёт на +85 XP.'
+        }
+      ]
+    },
+    {
+      id: 'ent_day', type: 'entity', label: 'ДЕНЬ ДНЕВНИКА', sub: 'daily_logs',
+      x: 740, y: 510, w: 180, h: 56, color: '#10b981',
+      desc: 'Суточная сводка дневника питания и водного баланса за конкретную календарную дату (таблица daily_logs). Объединяет все приёмы пищи за день и хранит флаги дисциплины.',
+      attrs: [
+        {
+          id: 'a_day_date', label: 'log_date', pk: true, dx: -185, dy: -38,
+          sqlType: 'DATE NOT NULL (UNIQUE с username)',
+          desc: 'Календарная дата записи в формате YYYY-MM-DD. В паре с логином пользователя (username, log_date) образует уникальный составной ключ дня.'
+        },
+        {
+          id: 'a_day_water', label: 'water_ml', pk: false, dx: 185, dy: -38,
+          sqlType: 'INT NOT NULL DEFAULT 0 CHECK (water_ml >= 0)',
+          desc: 'Объём чистой питьевой воды (в миллилитрах), выпитой пользователем за сутки. Суммируется с жидкостью из напитков и первых блюд; при достижении 1500 мл начисляется бонус +60 XP.'
+        },
+        {
+          id: 'a_day_freeze', label: 'freeze_used', pk: false, dx: -185, dy: 38,
+          sqlType: 'BOOLEAN NOT NULL DEFAULT FALSE',
+          desc: 'Логический флаг применения Щита заморозки к данному дню. Если равен TRUE, пропуск дня не прерывает стрик и не начисляет штраф -100 XP.'
+        },
+        {
+          id: 'a_day_redeem', label: 'penalty_redeemed', pk: false, dx: -165, dy: 92,
+          sqlType: 'BOOLEAN NOT NULL DEFAULT FALSE',
+          desc: 'Логический флаг отработки штрафа за пропущенный день через выполнение дневного квеста дисциплины (минимум 2 записи приёма пищи и 1000 мл жидкости).'
+        },
+        {
+          id: 'a_day_status', label: 'color_status', pk: false, derived: true, dx: 185, dy: 38,
+          sqlType: 'ВЫЧИСЛЯЕМЫЙ АТРИБУТ (green | yellow | red)',
+          desc: 'Производный индикатор выполнения дневной цели по калориям для тепловой карты календаря: зелёный (попадание в целевой коридор сценария), жёлтый (умеренное отклонение) или красный (сильный перебор/недобор).'
+        }
+      ]
+    },
+    {
+      id: 'ent_meal', type: 'entity', label: 'ПРИЁМ ПИЩИ', sub: 'meal_entries',
+      x: 740, y: 830, w: 180, h: 56, color: '#f59e0b',
+      desc: 'Конкретная запись съеденного блюда или напитка в рамках суточного дневника (таблица meal_entries) с указанием категории трапезы, массы порции и рассчитанной пищевой ценности.',
+      attrs: [
+        {
+          id: 'a_meal_id', label: 'meal_id', pk: true, dx: -195, dy: -20,
+          sqlType: 'SERIAL PRIMARY KEY',
+          desc: 'Уникальный идентификатор записи приёма пищи (первичный ключ таблицы meal_entries).'
+        },
+        {
+          id: 'a_meal_type', label: 'meal_type', pk: false, dx: -155, dy: 68,
+          sqlType: "VARCHAR(20) NOT NULL ('breakfast' | 'lunch' | 'dinner' | 'snack')",
+          desc: 'Категория приёма пищи в течение дня: завтрак (breakfast), обед (lunch), ужин (dinner) или перекус (snack).'
+        },
+        {
+          id: 'a_meal_grams', label: 'grams (г)', pk: false, dx: 0, dy: 88,
+          sqlType: 'INT NOT NULL CHECK (grams > 0)',
+          desc: 'Фактический вес порции блюда в граммах (или объём напитка в миллилитрах). На основе этого веса пропорционально пересчитываются калории, белки, жиры и углеводы.'
+        },
+        {
+          id: 'a_meal_kcal', label: 'kcal, p, f, c', pk: false, dx: 165, dy: 68,
+          sqlType: 'INT (kcal), NUMERIC(5,1) (p, f, c)',
+          desc: 'Итоговая энергетическая ценность (ккал) и содержание белков (p), жиров (f) и углеводов (c) в граммах для указанной порции блюда.'
+        },
+        {
+          id: 'a_meal_time', label: 'time', pk: false, dx: -195, dy: 28,
+          sqlType: 'TIME NOT NULL DEFAULT CURRENT_TIME',
+          desc: 'Время внесения блюда в дневник (в формате HH:MM) для хронологического отображения рациона.'
+        }
+      ]
+    },
+    {
+      id: 'ent_product', type: 'entity', label: 'ПРОДУКТ / БЛЮДО', sub: 'products',
+      x: 1245, y: 560, w: 190, h: 56, color: '#8b5cf6',
+      desc: 'Справочник продуктов питания и готовых блюд (таблица products). Включает 615+ позиций российских торговых сетей и кафе, а также пользовательские блюда, созданные через калькулятор рецептов.',
+      attrs: [
+        {
+          id: 'a_prod_id', label: 'product_id', pk: true, dx: 175, dy: -68,
+          sqlType: 'VARCHAR(64) PRIMARY KEY',
+          desc: 'Уникальный строковый идентификатор продукта в каталоге (например, ru_1..ru_615 для базовых товаров или custom_... для пользовательских блюд).'
+        },
+        {
+          id: 'a_prod_name', label: 'name', pk: false, dx: 195, dy: -5,
+          sqlType: 'VARCHAR(200) NOT NULL',
+          desc: 'Полное наименование продукта или блюда с указанием торговой марки и жирности (например, «Творог рассыпчатый 5% (Простоквашино)»). Индексируется для быстрого текстового поиска.'
+        },
+        {
+          id: 'a_prod_kcal', label: 'kcal100', pk: false, dx: 185, dy: 58,
+          sqlType: 'INT NOT NULL CHECK (kcal100 >= 0)',
+          desc: 'Энергетическая ценность продукта в килокалориях в расчёте на 100 граммов (или 100 мл) продукта.'
+        },
+        {
+          id: 'a_prod_pfc', label: 'p100/f100/c100', pk: false, dx: 25, dy: 92,
+          sqlType: 'NUMERIC(5,1) NOT NULL',
+          desc: 'Содержание белков (p100), жиров (f100) и углеводов (c100) в граммах на 100 г продукта.'
+        },
+        {
+          id: 'a_prod_port', label: 'portion', pk: false, dx: -145, dy: 82,
+          sqlType: 'INT NOT NULL DEFAULT 100',
+          desc: 'Стандартный вес одной порции или упаковки продукта в граммах (например, 180 г для пачки творога или 250 мл для стакана кефира) для добавления в 1 клик.'
+        },
+        {
+          id: 'a_prod_cust', label: 'is_custom', pk: false, dx: -155, dy: -68,
+          sqlType: 'BOOLEAN NOT NULL DEFAULT FALSE',
+          desc: 'Признак пользовательского блюда: FALSE — продукт из встроенного эталонного справочника РФ, TRUE — блюдо, созданное самим пользователем.'
+        }
+      ]
+    },
+    {
+      id: 'ent_weight', type: 'entity', label: 'ЗАМЕР ВЕСА', sub: 'weight_logs',
+      x: 1245, y: 195, w: 175, h: 56, color: '#06b6d4',
+      desc: 'Хронологический журнал измерений массы тела пользователя (таблица weight_logs). Используется для отслеживания прогресса и построения векторного графика динамики веса.',
+      attrs: [
+        {
+          id: 'a_w_date', label: 'measure_date', pk: true, dx: 40, dy: -85,
+          sqlType: 'DATE NOT NULL (UNIQUE с username)',
+          desc: 'Дата проведения взвешивания. Вместе с логином пользователя (username, measure_date) гарантирует отсутствие дубликатов замеров за один и тот же день.'
+        },
+        {
+          id: 'a_w_kg', label: 'weight_kg', pk: false, dx: 185, dy: -15,
+          sqlType: 'NUMERIC(4,1) NOT NULL CHECK (weight_kg BETWEEN 30 AND 250)',
+          desc: 'Зафиксированная масса тела пользователя в килограммах с точностью до десятых долей (например, 74.6 кг).'
+        },
+        {
+          id: 'a_w_id', label: 'weight_id', pk: true, dx: 165, dy: 58,
+          sqlType: 'SERIAL PRIMARY KEY',
+          desc: 'Внутренний автоинкрементный первичный ключ записи измерения веса в таблице weight_logs.'
+        }
+      ]
+    },
+    {
+      id: 'ent_reward', type: 'entity', label: 'НАГРАДА УРОВНЯ', sub: 'level_rewards',
+      x: 240, y: 690, w: 185, h: 56, color: '#ec4899',
+      desc: 'Справочник наград геймификации (таблица level_rewards), которые открываются пользователю на рубежах 1, 5, 10, 15, 20, 25 и 30 уровней за регулярное ведение дневника.',
+      attrs: [
+        {
+          id: 'a_rew_lvl', label: 'reward_lvl', pk: true, dx: -185, dy: -20,
+          sqlType: 'INT PRIMARY KEY (1, 5, 10, 15, 20, 25, 30)',
+          desc: 'Требуемый уровень профиля (первичный ключ справочника), по достижении которого разблокируется данный комплект оформления.'
+        },
+        {
+          id: 'a_rew_title', label: 'title', pk: false, dx: -155, dy: 65,
+          sqlType: 'VARCHAR(100) NOT NULL',
+          desc: 'Название наградного тира и звания пользователя (например, «Кибер-Следопыт», «Адепт Дисциплины», «Повелитель Калорий»).'
+        },
+        {
+          id: 'a_rew_cos', label: 'banner & frame', pk: false, dx: 35, dy: 88,
+          sqlType: 'VARCHAR(40) NOT NULL (banner_class, frame_class)',
+          desc: 'Идентификаторы CSS-темы баннера шапки профиля (например, banner-cyber, banner-gold) и анимированной рамки аватара (frame-cyber, frame-chroma).'
+        },
+        {
+          id: 'a_rew_nick', label: 'nick_effect', pk: false, dx: 175, dy: 52,
+          sqlType: "VARCHAR(40) DEFAULT ''",
+          desc: 'Спецэффект градиентного окрашивания никнейма пользователя (nick-cyber, nick-fire, nick-gold, nick-chroma), входящий в комплект награды.'
+        }
+      ]
+    }
+  ];
+
+  // Связи (Relationships) в ER-диаграмме
+  const relationships = [
+    {
+      id: 'rel_has_profile', type: 'relationship', label: 'Имеет', sub: '1 : 1',
+      x: 470, y: 225, w: 130, h: 74,
+      from: 'ent_account', to: 'ent_profile', cardFrom: '1', cardTo: '1',
+      desc: 'Связь 1:1 (Один к одному): каждая учётная запись в таблице accounts имеет ровно один персональный профиль в таблице profiles (связь через внешний ключ profiles.username UNIQUE).'
+    },
+    {
+      id: 'rel_logs_day', type: 'relationship', label: 'Ведёт', sub: '1 : N',
+      x: 740, y: 340, w: 130, h: 74,
+      from: 'ent_account', to: 'ent_day', cardFrom: '1', cardTo: 'N',
+      desc: 'Связь 1:N (Один ко многим): один пользователь ведёт множество суточных записей дневника питания (daily_logs) по различным календарным датам.'
+    },
+    {
+      id: 'rel_has_meals', type: 'relationship', label: 'Содержит', sub: '1 : N',
+      x: 740, y: 670, w: 136, h: 74,
+      from: 'ent_day', to: 'ent_meal', cardFrom: '1', cardTo: 'N',
+      desc: 'Связь 1:N (Один ко многим): один день дневника (daily_logs) содержит от нуля до нескольких записей приёмов пищи (meal_entries), связанных внешним ключом day_id.'
+    },
+    {
+      id: 'rel_meal_product', type: 'relationship', label: 'Включает', sub: 'N : 1',
+      x: 1025, y: 720, w: 136, h: 74,
+      from: 'ent_meal', to: 'ent_product', cardFrom: 'N', cardTo: '1',
+      desc: 'Связь N:1 (Многие к одному): множество записей приёмов пищи (meal_entries) ссылаются по внешнему ключу product_id на конкретный продукт или блюдо из справочника products.'
+    },
+    {
+      id: 'rel_creates_prod', type: 'relationship', label: 'Создаёт', sub: '1 : N',
+      x: 1030, y: 375, w: 130, h: 74,
+      from: 'ent_account', to: 'ent_product', cardFrom: '1', cardTo: 'N',
+      desc: 'Связь 1:N (Один ко многим): один пользователь может добавлять в справочник products множество собственных блюд и рецептов (поле creator_username).'
+    },
+    {
+      id: 'rel_tracks_weight', type: 'relationship', label: 'Измеряет', sub: '1 : N',
+      x: 995, y: 185, w: 136, h: 74,
+      from: 'ent_account', to: 'ent_weight', cardFrom: '1', cardTo: 'N',
+      desc: 'Связь 1:N (Один ко многим): один пользователь сохраняет множество замеров массы тела (weight_logs) в разные даты для отслеживания динамики веса.'
+    },
+    {
+      id: 'rel_unlocks_reward', type: 'relationship', label: 'Открывает', sub: 'M : N',
+      x: 240, y: 495, w: 142, h: 76,
+      from: 'ent_profile', to: 'ent_reward', cardFrom: 'M', cardTo: 'N',
+      desc: 'Связь M:N (Многие ко многим): по мере накопления опыта XP и роста уровня профиль пользователя разблокирует все эталонные комплекты наград из справочника level_rewards, у которых reward_lvl <= текущего уровня.'
+    }
+  ];
+
+  return { entities, relationships };
+}
+
+/* ============================================================================
+   2. ДАННЫЕ ФИЗИЧЕСКОЙ РЕЛЯЦИОННОЙ МОДЕЛИ (ФИЗИЧЕСКАЯ МОДЕЛЬ)
+   Каждое поле таблицы снабжено подробным описанием для Инспектора
+   ============================================================================ */
+function createInitialRelationalData() {
+  const tables = [
+    {
+      id: 'tbl_accounts', title: 'accounts', subtitle: 'Учётные записи пользователей',
+      x: 60, y: 55, w: 335, color: '#059669',
+      desc: 'Корневая таблица аккаунтов пользователей. Обеспечивает аутентификацию по логину и SHA-256 хэшу пароля.',
+      cols: [
+        { key: 'PK', name: 'username', type: 'VARCHAR(50)', desc: 'Уникальный логин пользователя (первичный ключ таблицы accounts).' },
+        { key: '',   name: 'display_name', type: 'VARCHAR(100)', desc: 'Отображаемое имя пользователя в интерфейсе.' },
+        { key: '',   name: 'pass_hash', type: 'CHAR(64) SHA256', desc: 'Криптографический хэш пароля SHA-256 с солью (без хранения пароля в открытом виде).' },
+        { key: '',   name: 'registered_date', type: 'DATE', desc: 'Дата создания учётной записи (начало отслеживания дисциплины).' },
+        { key: '',   name: 'created_at', type: 'TIMESTAMPTZ', desc: 'Точная серверная метка времени регистрации аккаунта.' }
+      ]
+    },
+    {
+      id: 'tbl_profiles', title: 'profiles', subtitle: 'Профиль, целевые нормы КБЖУ и XP',
+      x: 60, y: 340, w: 335, color: '#2563eb',
+      desc: 'Таблица персональных параметров, рассчитанных норм КБЖУ, оформления профиля и баланса щитов заморозки (связь 1:1 с accounts).',
+      cols: [
+        { key: 'PK', name: 'profile_id', type: 'SERIAL', desc: 'Автоинкрементный первичный ключ профиля.' },
+        { key: 'FK', name: 'username', type: 'VARCHAR(50) UNIQUE', desc: 'Уникальный внешний ключ на accounts(username) с каскадным удалением (ON DELETE CASCADE).' },
+        { key: '',   name: 'nickname', type: 'VARCHAR(100)', desc: 'Никнейм пользователя в карточке профиля.' },
+        { key: '',   name: 'status_text', type: 'VARCHAR(200)', desc: 'Пользовательский статус / девиз под никнеймом.' },
+        { key: '',   name: 'goal_mode', type: 'VARCHAR(20)', desc: "Режим цели: 'lose' (похудение), 'maintain' (баланс) или 'gain' (набор массы)." },
+        { key: '',   name: 'kcal_target', type: 'INT (DEFAULT 2000)', desc: 'Целевая суточная норма калорий по формуле Миффлина — Сан-Жеора.' },
+        { key: '',   name: 'p_target / f / c', type: 'INT (140/65/210 г)', desc: 'Целевые суточные нормы белков, жиров и углеводов в граммах.' },
+        { key: '',   name: 'frame / banner', type: 'VARCHAR(40)', desc: 'Выбранные CSS-классы рамки аватара (frame_class) и темы баннера (banner_class).' },
+        { key: '',   name: 'purchased_shields', type: 'INT DEFAULT 0', desc: 'Число купленных за опыт Щитов заморозки стрика.' },
+        { key: '',   name: 'spent_shield_xp', type: 'INT DEFAULT 0', desc: 'Общее количество опыта XP, потраченного на покупку щитов.' }
+      ]
+    },
+    {
+      id: 'tbl_daily', title: 'daily_logs', subtitle: 'Суточный дневник питания и воды',
+      x: 555, y: 45, w: 340, color: '#059669',
+      desc: 'Таблица суточных записей дневника пользователя по датам. Хранит водный баланс и флаги защиты стрика.',
+      cols: [
+        { key: 'PK', name: 'day_id', type: 'SERIAL', desc: 'Уникальный первичный ключ суточной записи дневника.' },
+        { key: 'FK', name: 'username', type: 'VARCHAR(50)', desc: 'Внешний ключ на таблицу accounts(username).' },
+        { key: 'UQ', name: 'log_date', type: 'DATE (YYYY-MM-DD)', desc: 'Календарная дата записи. Образует уникальный индекс UNIQUE(username, log_date).' },
+        { key: '',   name: 'water_ml', type: 'INT (мл воды)', desc: 'Количество выпитой чистой воды за сутки в миллилитрах.' },
+        { key: '',   name: 'freeze_used', type: 'BOOLEAN', desc: 'Признак защиты дня Щитом заморозки (отменяет штраф -100 XP за пропуск).' },
+        { key: '',   name: 'penalty_redeemed', type: 'BOOLEAN', desc: 'Признак отработки пропуска дня через выполнение дневного квеста.' }
+      ]
+    },
+    {
+      id: 'tbl_meals', title: 'meal_entries', subtitle: 'Позиции приёмов пищи за день',
+      x: 555, y: 410, w: 340, color: '#d97706',
+      desc: 'Таблица конкретных съеденных блюд за день с привязкой к категории трапезы, весу порции и рассчитанным макронутриентам.',
+      cols: [
+        { key: 'PK', name: 'meal_id', type: 'SERIAL', desc: 'Первичный ключ записи приёма пищи.' },
+        { key: 'FK', name: 'day_id', type: 'INT -> daily_logs', desc: 'Внешний ключ на суточную запись daily_logs(day_id) ON DELETE CASCADE.' },
+        { key: 'FK', name: 'product_id', type: 'VARCHAR(64) NULL', desc: 'Внешний ключ на продукт в справочнике products(product_id) ON DELETE SET NULL.' },
+        { key: '',   name: 'meal_type', type: 'VARCHAR(20)', desc: "Тип трапезы: 'breakfast' (завтрак), 'lunch' (обед), 'dinner' (ужин), 'snack' (перекус)." },
+        { key: '',   name: 'dish_name', type: 'VARCHAR(200)', desc: 'Название съеденного блюда или напитка.' },
+        { key: '',   name: 'grams', type: 'INT (вес порции, г)', desc: 'Вес съеденной порции в граммах (или объём в миллилитрах).' },
+        { key: '',   name: 'kcal', type: 'INT', desc: 'Калорийность данной порции блюда (ккал).' },
+        { key: '',   name: 'p / f / c', type: 'NUMERIC(5,1)', desc: 'Количество белков (p), жиров (f) и углеводов (c) в граммах для данной порции.' },
+        { key: '',   name: 'logged_time', type: 'TIME (HH:MM)', desc: 'Время добавления записи в дневник.' }
+      ]
+    },
+    {
+      id: 'tbl_products', title: 'products', subtitle: 'Каталог продуктов РФ и своих блюд',
+      x: 1060, y: 370, w: 345, color: '#7c3aed',
+      desc: 'Справочник из 615+ продуктов российских магазинов и пользовательских рецептов с пищевой ценностью на 100 г.',
+      cols: [
+        { key: 'PK', name: 'product_id', type: 'VARCHAR(64)', desc: "Первичный ключ продукта ('ru_1'..'ru_615' или 'custom_...')." },
+        { key: 'FK', name: 'creator_username', type: 'VARCHAR(50) NULL', desc: 'Внешний ключ на автора блюда accounts(username); NULL для базовых продуктов РФ.' },
+        { key: '',   name: 'name', type: 'VARCHAR(200)', desc: 'Наименование продукта или блюда (индексируется для быстрого поиска).' },
+        { key: '',   name: 'brand', type: 'VARCHAR(100)', desc: 'Торговая марка или сеть (Простоквашино, ВкусВилл, Савушкин, Додо и др.).' },
+        { key: '',   name: 'category', type: 'VARCHAR(60)', desc: 'Товарная категория (Молочные, Мясо и рыба, Готовая еда, Крупы и хлеб и др.).' },
+        { key: '',   name: 'kcal100', type: 'INT (на 100 г)', desc: 'Калорийность на 100 г продукта (ккал).' },
+        { key: '',   name: 'p100 / f100 / c100', type: 'NUMERIC(5,1)', desc: 'Белки, жиры и углеводы в расчёте на 100 г продукта.' },
+        { key: '',   name: 'default_portion', type: 'INT (г)', desc: 'Стандартная масса одной порции в граммах по умолчанию.' },
+        { key: '',   name: 'barcode', type: 'VARCHAR(32)', desc: 'Штрихкод упаковки товара (EAN-13).' },
+        { key: '',   name: 'is_custom', type: 'BOOLEAN', desc: 'TRUE для блюд, созданных пользователем; FALSE для системного каталога.' }
+      ]
+    },
+    {
+      id: 'tbl_weights', title: 'weight_logs', subtitle: 'Хронология замеров веса тела',
+      x: 1060, y: 55, w: 345, color: '#0891b2',
+      desc: 'Таблица истории взвешиваний пользователя для расчёта прогресса и построения графика динамики массы тела.',
+      cols: [
+        { key: 'PK', name: 'weight_id', type: 'SERIAL', desc: 'Первичный ключ записи взвешивания.' },
+        { key: 'FK', name: 'username', type: 'VARCHAR(50)', desc: 'Внешний ключ на учётную запись пользователя accounts(username).' },
+        { key: 'UQ', name: 'measure_date', type: 'DATE', desc: 'Дата измерения веса (уникальна в паре с username).' },
+        { key: '',   name: 'weight_kg', type: 'NUMERIC(4,1)', desc: 'Вес тела в килограммах с ограничением CHECK (weight_kg BETWEEN 30 AND 250).' }
+      ]
+    },
+    {
+      id: 'tbl_rewards', title: 'level_rewards', subtitle: 'Справочник наград за уровни',
+      x: 60, y: 735, w: 335, color: '#db2777',
+      desc: 'Эталонный справочник тиров наград (1, 5, 10, 15, 20, 25, 30 LVL), открывающих визуальную кастомизацию профиля.',
+      cols: [
+        { key: 'PK', name: 'reward_lvl', type: 'INT (1, 5..30)', desc: 'Уровень профиля (первичный ключ), на котором открывается награда.' },
+        { key: '',   name: 'title', type: 'VARCHAR(100)', desc: 'Название звания и наградного комплекта.' },
+        { key: '',   name: 'banner_class', type: 'VARCHAR(40)', desc: 'CSS-класс разблокируемой темы баннера профиля.' },
+        { key: '',   name: 'frame_class', type: 'VARCHAR(40)', desc: 'CSS-класс разблокируемой неоновой рамки аватара.' },
+        { key: '',   name: 'nick_effect', type: 'VARCHAR(40)', desc: 'CSS-класс градиентного спецэффекта никнейма.' }
+      ]
+    }
+  ];
+
+  const links = [
+    { from: 'tbl_accounts', to: 'tbl_profiles', label: '1 : 1', type: '1:1' },
+    { from: 'tbl_accounts', to: 'tbl_daily',    label: '1 : N', type: '1:N' },
+    { from: 'tbl_daily',    to: 'tbl_meals',    label: '1 : N', type: '1:N' },
+    { from: 'tbl_products', to: 'tbl_meals',    label: '1 : N', type: '1:N' },
+    { from: 'tbl_accounts', to: 'tbl_products', label: '1 : N (автор)', type: '1:N' },
+    { from: 'tbl_accounts', to: 'tbl_weights',  label: '1 : N', type: '1:N' },
+    { from: 'tbl_profiles', to: 'tbl_rewards',  label: 'M : N (по XP)', type: 'M:N' }
+  ];
+
+  return { tables, links };
+}
+
+let chenData = createInitialChenData();
+let relData = createInitialRelationalData();
+
+/* ============================================================================
+   ОТРИСОВКА SVG (СВЕТЛАЯ ПАЛИТРА С ВЫСОКОЙ КОНТРАСТНОСТЬЮ)
+   ============================================================================ */
+function getLightThemeColors() {
+  return {
+    bg: '#ffffff',
+    entityFill: '#ffffff',
+    relFill: '#fef3c7',
+    attrFill: '#eff6ff',
+    textMain: '#0f172a',
+    textSub: '#475569',
+    line: '#64748b',
+    badgeBg: '#f1f5f9'
+  };
+}
+
+function renderDiagram() {
+  const edgesLayer = document.getElementById('edgesLayer');
+  const nodesLayer = document.getElementById('nodesLayer');
+  const panZoomGroup = document.getElementById('svgPanZoomGroup');
+  if (!edgesLayer || !nodesLayer) return;
+
+  panZoomGroup.setAttribute('transform', `translate(${panX}, ${panY}) scale(${zoomLevel})`);
+
+  if (currentTab === 'chen') {
+    renderChenDiagram(edgesLayer, nodesLayer);
+  } else {
+    renderRelationalDiagram(edgesLayer, nodesLayer);
+  }
+}
+
+function renderChenDiagram(edgesLayer, nodesLayer) {
+  const tc = getLightThemeColors();
+  let edgesHtml = '';
+  let nodesHtml = '';
+
+  const entMap = {};
+  chenData.entities.forEach(e => { entMap[e.id] = e; });
+
+  // 1. Линии от связей (ромбов) к сущностям (прямоугольникам) с высокой контрастностью
+  chenData.relationships.forEach(rel => {
+    const eFrom = entMap[rel.from];
+    const eTo = entMap[rel.to];
+    if (!eFrom || !eTo) return;
+
+    const strokeCol = '#64748b';
+    const mx1 = (eFrom.x + rel.x) / 2;
+    const my1 = (eFrom.y + rel.y) / 2;
+    const mx2 = (rel.x + eTo.x) / 2;
+    const my2 = (rel.y + eTo.y) / 2;
+
+    edgesHtml += `
+      <line x1="${eFrom.x}" y1="${eFrom.y}" x2="${rel.x}" y2="${rel.y}" stroke="${strokeCol}" stroke-width="2.2" />
+      <line x1="${rel.x}" y1="${rel.y}" x2="${eTo.x}" y2="${eTo.y}" stroke="${strokeCol}" stroke-width="2.2" />
+      <g transform="translate(${mx1}, ${my1})">
+        <rect x="-15" y="-11" width="30" height="22" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+        <text x="0" y="4" text-anchor="middle" fill="#b45309" font-size="12" font-weight="800">${rel.cardFrom}</text>
+      </g>
+      <g transform="translate(${mx2}, ${my2})">
+        <rect x="-15" y="-11" width="30" height="22" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+        <text x="0" y="4" text-anchor="middle" fill="#b45309" font-size="12" font-weight="800">${rel.cardTo}</text>
+      </g>
+    `;
+  });
+
+  // 2. Эллипсы всех атрибутов (с кликом на конкретный атрибут)
+  chenData.entities.forEach(ent => {
+    (ent.attrs || []).forEach(attr => {
+      const ax = ent.x + attr.dx;
+      const ay = ent.y + attr.dy;
+      const isAttrSel = (selectedAttrId === attr.id);
+      const lineCol = attr.pk ? '#059669' : (attr.derived ? '#e11d48' : '#64748b');
+
+      edgesHtml += `<line x1="${ent.x}" y1="${ent.y}" x2="${ax}" y2="${ay}" stroke="${lineCol}" stroke-width="${isAttrSel ? '2.4' : '1.6'}" ${attr.derived ? 'stroke-dasharray="4 3"' : ''}/>`;
+
+      const rx = Math.max(50, attr.label.length * 4.5 + 15);
+      const ry = 18;
+      const strokeColor = attr.pk ? '#059669' : (attr.derived ? '#e11d48' : '#2563eb');
+      const fillColor = isAttrSel
+        ? (attr.pk ? '#d1fae5' : (attr.derived ? '#ffe4e6' : '#dbeafe'))
+        : (attr.pk ? '#ecfdf5' : (attr.derived ? '#fff1f2' : '#eff6ff'));
+      const textDeco = attr.pk ? 'underline' : 'none';
+      const fontWeight = (attr.pk || isAttrSel) ? '800' : '600';
+
+      nodesHtml += `
+        <g class="svg-node" data-drag-type="attr" data-ent-id="${ent.id}" data-attr-id="${attr.id}" transform="translate(${ax}, ${ay})" onclick="inspectAttribute('${ent.id}', '${attr.id}')">
+          <ellipse cx="0" cy="0" rx="${rx}" ry="${ry}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${isAttrSel ? '3.2' : (attr.pk ? '2.2' : '1.6')}" ${attr.derived ? 'stroke-dasharray="5 3"' : ''} />
+          <text x="0" y="4" text-anchor="middle" fill="${tc.textMain}" font-size="11.5" font-weight="${fontWeight}" text-decoration="${textDeco}" class="mono">${attr.label}</text>
+        </g>
+      `;
+    });
+  });
+
+  // 3. Ромбы связей (Relationships)
+  chenData.relationships.forEach(rel => {
+    const hw = rel.w / 2;
+    const hh = rel.h / 2;
+    const pts = `0,${-hh} ${hw},0 0,${hh} ${-hw},0`;
+    const isSel = (selectedNodeId === rel.id && !selectedAttrId);
+    const strokeCol = isSel ? '#b45309' : '#d97706';
+    const fillCol = isSel ? '#fde68a' : '#fef3c7';
+
+    nodesHtml += `
+      <g class="svg-node" data-drag-type="rel" data-id="${rel.id}" transform="translate(${rel.x}, ${rel.y})" onclick="inspectNode('${rel.id}')">
+        <polygon points="${pts}" fill="${fillCol}" stroke="${strokeCol}" stroke-width="${isSel ? '3.4' : '2.2'}" />
+        <text x="0" y="-2" text-anchor="middle" fill="#0f172a" font-size="12.5" font-weight="800">${rel.label}</text>
+        <text x="0" y="13" text-anchor="middle" fill="#b45309" font-size="10.5" font-weight="800" class="mono">${rel.sub}</text>
+      </g>
+    `;
+  });
+
+  // 4. Прямоугольники сущностей (Entities)
+  chenData.entities.forEach(ent => {
+    const hw = ent.w / 2;
+    const hh = ent.h / 2;
+    const isSel = (selectedNodeId === ent.id && !selectedAttrId);
+
+    nodesHtml += `
+      <g class="svg-node" data-drag-type="entity" data-id="${ent.id}" transform="translate(${ent.x}, ${ent.y})" onclick="inspectNode('${ent.id}')">
+        <rect x="${-hw}" y="${-hh}" width="${ent.w}" height="${ent.h}" rx="8" fill="#ffffff" stroke="${ent.color}" stroke-width="${isSel ? '3.6' : '2.4'}" />
+        <rect x="${-hw}" y="${-hh}" width="${ent.w}" height="6" rx="4" fill="${ent.color}" />
+        <text x="0" y="-2" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="800">${ent.label}</text>
+        <text x="0" y="15" text-anchor="middle" fill="#475569" font-size="10.5" font-weight="600" class="mono">${ent.sub}</text>
+      </g>
+    `;
+  });
+
+  edgesLayer.innerHTML = edgesHtml;
+  nodesLayer.innerHTML = nodesHtml;
+}
+
+/* ============================================================================
+   ОТРИСОВКА РЕЛЯЦИОННОЙ МОДЕЛИ (CROW'S FOOT) С ЧЁТКОЙ КОНТРАСТНОСТЬЮ НА БЕЛОМ ФОНЕ
+   ============================================================================ */
+function renderRelationalDiagram(edgesLayer, nodesLayer) {
+  let edgesHtml = '';
+  let nodesHtml = '';
+
+  const tblMap = {};
+  relData.tables.forEach(t => {
+    t.h = 46 + t.cols.length * 24 + 8;
+    tblMap[t.id] = t;
+  });
+
+  // Контрастные тёмно-изумрудные линии связей (#047857) + читаемые бейджи кардинальности (#064e3b на #ecfdf5)
+  const strokeCol = '#047857';
+
+  relData.links.forEach(lnk => {
+    const t1 = tblMap[lnk.from];
+    const t2 = tblMap[lnk.to];
+    if (!t1 || !t2) return;
+
+    const c1x = t1.x + t1.w / 2;
+    const c1y = t1.y + t1.h / 2;
+    const c2x = t2.x + t2.w / 2;
+    const c2y = t2.y + t2.h / 2;
+
+    let x1 = c1x, y1 = c1y, x2 = c2x, y2 = c2y;
+    let isHoriz = Math.abs(c2x - c1x) > Math.abs(c2y - c1y);
+    let dirX = 0, dirY = 0;
+
+    if (isHoriz) {
+      dirX = c2x > c1x ? 1 : -1;
+      x1 = dirX > 0 ? t1.x + t1.w : t1.x;
+      x2 = dirX > 0 ? t2.x : t2.x + t2.w;
+    } else {
+      dirY = c2y > c1y ? 1 : -1;
+      y1 = dirY > 0 ? t1.y + t1.h : t1.y;
+      y2 = dirY > 0 ? t2.y : t2.y + t2.h;
+    }
+
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+
+    const pathD = isHoriz
+      ? `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`
+      : `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+
+    // Отрисовка линии связи с разветвлением на конце N и засечки 1 на начале
+    let crowFootSvg = '';
+    if (lnk.type === '1:N' || lnk.type === 'M:N') {
+      if (isHoriz) {
+        const bx = x2 - dirX * 14;
+        crowFootSvg += `
+          <line x1="${bx}" y1="${y2}" x2="${x2}" y2="${y2 - 7}" stroke="${strokeCol}" stroke-width="2.2" stroke-linecap="round"/>
+          <line x1="${bx}" y1="${y2}" x2="${x2}" y2="${y2 + 7}" stroke="${strokeCol}" stroke-width="2.2" stroke-linecap="round"/>
+          <line x1="${x1 + dirX * 8}" y1="${y1 - 6}" x2="${x1 + dirX * 8}" y2="${y1 + 6}" stroke="${strokeCol}" stroke-width="2.2" stroke-linecap="round"/>
+        `;
+      } else {
+        const by = y2 - dirY * 14;
+        crowFootSvg += `
+          <line x1="${x2}" y1="${by}" x2="${x2 - 7}" y2="${y2}" stroke="${strokeCol}" stroke-width="2.2" stroke-linecap="round"/>
+          <line x1="${x2}" y1="${by}" x2="${x2 + 7}" y2="${y2}" stroke="${strokeCol}" stroke-width="2.2" stroke-linecap="round"/>
+          <line x1="${x1 - 6}" y1="${y1 + dirY * 8}" x2="${x1 + 6}" y2="${y1 + dirY * 8}" stroke="${strokeCol}" stroke-width="2.2" stroke-linecap="round"/>
+        `;
+      }
+    } else {
+      // 1 : 1
+      if (isHoriz) {
+        crowFootSvg += `
+          <line x1="${x1 + dirX * 8}" y1="${y1 - 6}" x2="${x1 + dirX * 8}" y2="${y1 + 6}" stroke="${strokeCol}" stroke-width="2.2"/>
+          <line x1="${x2 - dirX * 8}" y1="${y2 - 6}" x2="${x2 - dirX * 8}" y2="${y2 + 6}" stroke="${strokeCol}" stroke-width="2.2"/>
+        `;
+      } else {
+        crowFootSvg += `
+          <line x1="${x1 - 6}" y1="${y1 + dirY * 8}" x2="${x1 + 6}" y2="${y1 + dirY * 8}" stroke="${strokeCol}" stroke-width="2.2"/>
+          <line x1="${x2 - 6}" y1="${y2 - dirY * 8}" x2="${x2 + 6}" y2="${y2 - dirY * 8}" stroke="${strokeCol}" stroke-width="2.2"/>
+        `;
+      }
+    }
+
+    const badgeW = Math.max(66, lnk.label.length * 7 + 18);
+    edgesHtml += `
+      <path d="${pathD}" fill="none" stroke="${strokeCol}" stroke-width="2.4" />
+      ${crowFootSvg}
+      <circle cx="${x1}" cy="${y1}" r="4" fill="${strokeCol}" />
+      <circle cx="${x2}" cy="${y2}" r="4.5" fill="#ffffff" stroke="${strokeCol}" stroke-width="2.2" />
+      <g transform="translate(${midX}, ${midY})">
+        <rect x="${-badgeW / 2}" y="-12" width="${badgeW}" height="24" rx="6" fill="#ecfdf5" stroke="#047857" stroke-width="1.8"/>
+        <text x="0" y="4" text-anchor="middle" fill="#064e3b" font-size="11" font-weight="800" class="mono">${lnk.label}</text>
+      </g>
+    `;
+  });
+
+  // Карточки таблиц с кликабельными строками полей
+  relData.tables.forEach(t => {
+    const isTblSel = (selectedNodeId === t.id && !selectedAttrId);
+    let rowsSvg = '';
+
+    t.cols.forEach((c, idx) => {
+      const ry = 46 + idx * 24;
+      const colAttrKey = `${t.id}__col_${idx}`;
+      const isColSel = (selectedAttrId === colAttrKey);
+      const badgeColor = c.key === 'PK' ? '#f59e0b' : (c.key === 'FK' ? '#2563eb' : '#9333ea');
+      const badgeTextCol = c.key === 'PK' ? '#0f172a' : '#ffffff';
+
+      rowsSvg += `
+        <g class="svg-col-row" onclick="event.stopPropagation(); inspectTableColumn('${t.id}', ${idx})">
+          <rect class="row-hit" x="2" y="${ry}" width="${t.w - 4}" height="24" fill="${isColSel ? '#d1fae5' : 'transparent'}" />
+          <line x1="0" y1="${ry}" x2="${t.w}" y2="${ry}" stroke="rgba(15,23,42,0.08)" stroke-width="1" />
+          ${c.key ? `
+            <rect x="8" y="${ry + 4}" width="24" height="16" rx="4" fill="${badgeColor}" />
+            <text x="20" y="${ry + 15}" text-anchor="middle" fill="${badgeTextCol}" font-size="9.5" font-weight="800" class="mono">${c.key}</text>
+          ` : ''}
+          <text x="38" y="${ry + 16}" fill="#0f172a" font-size="11.5" font-weight="${(c.key === 'PK' || isColSel) ? '800' : '600'}" text-decoration="${c.key === 'PK' ? 'underline' : 'none'}" class="mono">${c.name}</text>
+          <text x="${t.w - 10}" y="${ry + 16}" text-anchor="end" fill="#334155" font-size="10.5" font-weight="500" class="mono">${c.type}</text>
+        </g>
+      `;
+    });
+
+    nodesHtml += `
+      <g class="svg-node" data-drag-type="table" data-id="${t.id}" transform="translate(${t.x}, ${t.y})" onclick="inspectNode('${t.id}')">
+        <rect x="0" y="0" width="${t.w}" height="${t.h}" rx="10" fill="#ffffff" stroke="${t.color}" stroke-width="${isTblSel ? '3.4' : '2.2'}" />
+        <rect x="0" y="0" width="${t.w}" height="44" rx="9" fill="${t.color}" />
+        <text x="12" y="20" fill="#ffffff" font-size="13.5" font-weight="900" class="mono">${t.title}</text>
+        <text x="12" y="36" fill="#f8fafc" font-size="10.5" font-weight="600" opacity="0.92">${t.subtitle}</text>
+        ${rowsSvg}
+      </g>
+    `;
+  });
+
+  edgesLayer.innerHTML = edgesHtml;
+  nodesLayer.innerHTML = nodesHtml;
+}
+
+/* ============================================================================
+   ИНСПЕКТОР ЭЛЕМЕНТОВ СПРАВА (СУЩНОСТИ, СВЯЗИ, АТРИБУТЫ И ПОЛЯ ТАБЛИЦ)
+   ============================================================================ */
+function inspectAttribute(entId, attrId) {
+  if (dragMoved) return;
+  const ent = chenData.entities.find(e => e.id === entId);
+  if (!ent) return;
+  const attr = (ent.attrs || []).find(a => a.id === attrId);
+  if (!attr) return;
+
+  selectedNodeId = entId;
+  selectedAttrId = attrId;
+
+  const box = document.getElementById('inspectorContent');
+  if (!box) return;
+
+  const roleBadge = attr.pk
+    ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ПЕРВИЧНЫЙ КЛЮЧ (PK)</span>`
+    : (attr.derived
+      ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">ВЫЧИСЛЯЕМЫЙ АТРИБУТ</span>`
+      : `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">АТРИБУТ СУЩНОСТИ</span>`);
+
+  box.innerHTML = `
+    <div class="p-3.5 rounded-xl bg-slate-950 border border-blue-500/40 shadow-lg">
+      <div class="flex items-center justify-between gap-2 mb-1.5">
+        ${roleBadge}
+        <span class="text-[11px] font-mono text-slate-400">${ent.sub}</span>
+      </div>
+      <h3 class="text-base font-extrabold text-white mono mt-1">${attr.label}</h3>
+      <div class="mt-1.5 inline-block px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-300">
+        Тип: ${attr.sqlType || 'VARCHAR'}
+      </div>
+      <p class="text-xs text-slate-200 mt-3 leading-relaxed">${attr.desc}</p>
+
+      <div class="mt-3.5 pt-3 border-t border-slate-800 flex items-center justify-between">
+        <span class="text-[11px] text-slate-400">Принадлежит сущности:</span>
+        <button type="button" onclick="inspectNode('${ent.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-emerald-300 transition">
+          ${ent.label} →
+        </button>
+      </div>
+    </div>
+  `;
+  renderDiagram();
+}
+
+function inspectTableColumn(tblId, colIdx) {
+  if (dragMoved) return;
+  const tbl = relData.tables.find(t => t.id === tblId);
+  if (!tbl || !tbl.cols[colIdx]) return;
+  const col = tbl.cols[colIdx];
+
+  selectedNodeId = tblId;
+  selectedAttrId = `${tblId}__col_${colIdx}`;
+
+  const box = document.getElementById('inspectorContent');
+  if (!box) return;
+
+  const badgeHtml = col.key === 'PK'
+    ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">ПЕРВИЧНЫЙ КЛЮЧ (PK)</span>`
+    : (col.key === 'FK'
+      ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">ВНЕШНИЙ КЛЮЧ (FK)</span>`
+      : (col.key === 'UQ'
+        ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">УНИКАЛЬНЫЙ КЛЮЧ (UQ)</span>`
+        : `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ПОЛЕ ТАБЛИЦЫ</span>`));
+
+  box.innerHTML = `
+    <div class="p-3.5 rounded-xl bg-slate-950 border border-emerald-500/40 shadow-lg">
+      <div class="flex items-center justify-between gap-2 mb-1.5">
+        ${badgeHtml}
+        <span class="text-[11px] font-mono text-slate-400">${tbl.title}</span>
+      </div>
+      <h3 class="text-base font-extrabold text-white mono mt-1">${col.name}</h3>
+      <div class="mt-1.5 inline-block px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-300">
+        Тип SQL: ${col.type}
+      </div>
+      <p class="text-xs text-slate-200 mt-3 leading-relaxed">${col.desc}</p>
+
+      <div class="mt-3.5 pt-3 border-t border-slate-800 flex items-center justify-between">
+        <span class="text-[11px] text-slate-400">Таблица БД:</span>
+        <button type="button" onclick="inspectNode('${tbl.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-emerald-300 mono transition">
+          ${tbl.title} →
+        </button>
+      </div>
+    </div>
+  `;
+  renderDiagram();
+}
+
+function inspectNode(nodeId) {
+  if (dragMoved) return;
+  selectedNodeId = nodeId;
+  selectedAttrId = null;
+
+  const box = document.getElementById('inspectorContent');
+  if (!box) return;
+
+  const ent = chenData.entities.find(e => e.id === nodeId);
+  if (ent) {
+    box.innerHTML = `
+      <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">СУЩНОСТЬ БД</span>
+          <span class="text-xs font-mono text-slate-400">${ent.sub}</span>
+        </div>
+        <h3 class="text-base font-extrabold text-white mt-1">${ent.label}</h3>
+        <p class="text-xs text-slate-300 mt-2 leading-relaxed">${ent.desc}</p>
+        <div class="mt-3 pt-3 border-t border-slate-800">
+          <div class="text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Атрибуты (нажмите для описания):</div>
+          <div class="space-y-1">
+            ${ent.attrs.map(a => `
+              <button type="button" onclick="inspectAttribute('${ent.id}', '${a.id}')" class="w-full text-left flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-transparent hover:border-slate-700 transition">
+                <span class="mono ${a.pk ? 'underline font-bold text-emerald-300' : 'text-slate-200'}">${a.label}</span>
+                <span class="text-[10px] ${a.pk ? 'text-amber-300 font-bold' : (a.derived ? 'text-rose-300' : 'text-slate-400')}">
+                  ${a.pk ? '🔑 PK (Ключ)' : (a.derived ? '⚡ Вычисляемый' : 'Подробнее →')}
+                </span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    renderDiagram();
+    return;
+  }
+
+  const rel = chenData.relationships.find(r => r.id === nodeId);
+  if (rel) {
+    box.innerHTML = `
+      <div class="p-3.5 rounded-xl bg-slate-950 border border-amber-500/40">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">СВЯЗЬ (ОТНОШЕНИЕ)</span>
+          <span class="text-xs font-mono font-bold text-amber-300">${rel.sub}</span>
+        </div>
+        <h3 class="text-base font-extrabold text-white mt-1">Связь «${rel.label}»</h3>
+        <p class="text-xs text-slate-300 mt-2 leading-relaxed">${rel.desc}</p>
+      </div>
+    `;
+    renderDiagram();
+    return;
+  }
+
+  const tbl = relData.tables.find(t => t.id === nodeId);
+  if (tbl) {
+    box.innerHTML = `
+      <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">ТАБЛИЦА БД</span>
+          <span class="text-xs font-mono text-slate-400">${tbl.cols.length} полей</span>
+        </div>
+        <h3 class="text-base font-extrabold text-white mono mt-1">${tbl.title}</h3>
+        <p class="text-xs text-slate-300 mt-1 leading-relaxed">${tbl.desc}</p>
+        <div class="mt-3 pt-3 border-t border-slate-800">
+          <div class="text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Поля таблицы (нажмите для описания):</div>
+          <div class="space-y-1">
+            ${tbl.cols.map((c, idx) => `
+              <button type="button" onclick="inspectTableColumn('${tbl.id}', ${idx})" class="w-full text-left flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-transparent hover:border-slate-700 mono transition">
+                <span class="${c.key === 'PK' ? 'text-amber-300 font-bold underline' : 'text-slate-200'}">${c.key ? '[' + c.key + '] ' : ''}${c.name}</span>
+                <span class="text-[10px] text-slate-400">${c.type}</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    renderDiagram();
+  }
+}
+
+/* ============================================================================
+   ПЕРЕТАСКИВАНИЕ УЗЛОВ (DRAG & DROP) И ПАНОРАМИРОВАНИЕ ХОЛСТА
+   ============================================================================ */
+let dragState = null;
+let dragMoved = false;
+
+function getSvgPoint(evt) {
+  const svg = document.getElementById('erSvgCanvas');
+  const pt = svg.createSVGPoint();
+  const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+  const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  pt.x = clientX;
+  pt.y = clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return { x: 0, y: 0, rawX: 0, rawY: 0 };
+  const transformed = pt.matrixTransform(ctm.inverse());
+  return {
+    x: (transformed.x - panX) / zoomLevel,
+    y: (transformed.y - panY) / zoomLevel,
+    rawX: transformed.x,
+    rawY: transformed.y
+  };
+}
+
+function initSvgInteractions() {
+  const svg = document.getElementById('erSvgCanvas');
+  if (!svg) return;
+
+  const onStart = (e) => {
+    dragMoved = false;
+    const nodeEl = e.target.closest('.svg-node');
+    const pt = getSvgPoint(e);
+
+    if (nodeEl) {
+      e.stopPropagation();
+      const dragType = nodeEl.getAttribute('data-drag-type');
+      if (dragType === 'entity') {
+        const id = nodeEl.getAttribute('data-id');
+        const target = chenData.entities.find(x => x.id === id);
+        if (target) dragState = { mode: 'node', target, startX: pt.rawX, startY: pt.rawY, offsetX: pt.x - target.x, offsetY: pt.y - target.y };
+      } else if (dragType === 'rel') {
+        const id = nodeEl.getAttribute('data-id');
+        const target = chenData.relationships.find(x => x.id === id);
+        if (target) dragState = { mode: 'node', target, startX: pt.rawX, startY: pt.rawY, offsetX: pt.x - target.x, offsetY: pt.y - target.y };
+      } else if (dragType === 'attr') {
+        const entId = nodeEl.getAttribute('data-ent-id');
+        const attrId = nodeEl.getAttribute('data-attr-id');
+        const ent = chenData.entities.find(x => x.id === entId);
+        const attr = ent && ent.attrs.find(a => a.id === attrId);
+        if (ent && attr) {
+          dragState = { mode: 'attr', ent, attr, startX: pt.rawX, startY: pt.rawY, offsetX: pt.x - (ent.x + attr.dx), offsetY: pt.y - (ent.y + attr.dy) };
+        }
+      } else if (dragType === 'table') {
+        const id = nodeEl.getAttribute('data-id');
+        const target = relData.tables.find(x => x.id === id);
+        if (target) dragState = { mode: 'node', target, startX: pt.rawX, startY: pt.rawY, offsetX: pt.x - target.x, offsetY: pt.y - target.y };
+      }
+    } else {
+      dragState = { mode: 'pan', startX: pt.rawX, startY: pt.rawY, startRawX: pt.rawX - panX, startRawY: pt.rawY - panY };
+    }
+  };
+
+  const onMove = (e) => {
+    if (!dragState) return;
+    const pt = getSvgPoint(e);
+    if (Math.hypot(pt.rawX - dragState.startX, pt.rawY - dragState.startY) > 4) {
+      dragMoved = true;
+    }
+    if (!dragMoved) return;
+    e.preventDefault();
+
+    if (dragState.mode === 'node') {
+      dragState.target.x = Math.round(pt.x - dragState.offsetX);
+      dragState.target.y = Math.round(pt.y - dragState.offsetY);
+      renderDiagram();
+    } else if (dragState.mode === 'attr') {
+      dragState.attr.dx = Math.round(pt.x - dragState.offsetX - dragState.ent.x);
+      dragState.attr.dy = Math.round(pt.y - dragState.offsetY - dragState.ent.y);
+      renderDiagram();
+    } else if (dragState.mode === 'pan') {
+      panX = Math.round(pt.rawX - dragState.startRawX);
+      panY = Math.round(pt.rawY - dragState.startRawY);
+      renderDiagram();
+    }
+  };
+
+  const onEnd = () => {
+    dragState = null;
+    setTimeout(() => { dragMoved = false; }, 0);
+  };
+
+  svg.addEventListener('mousedown', onStart);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onEnd);
+
+  svg.addEventListener('touchstart', onStart, { passive: false });
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('touchend', onEnd);
+}
+
+/* ============================================================================
+   ПЕРЕКЛЮЧЕНИЕ МОДЕЛЕЙ И МАСШТАБИРОВАНИЕ
+   ============================================================================ */
+function switchViewTab(tab) {
+  currentTab = tab;
+  ['chen', 'rel'].forEach(t => {
+    const btn = document.getElementById('tabBtn-' + t);
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+
+  selectedAttrId = null;
+  if (tab === 'chen') {
+    inspectNode('ent_account');
+  } else {
+    inspectNode('tbl_accounts');
+  }
+  renderDiagram();
+}
+
+function zoomDiagram(delta) {
+  zoomLevel = Math.min(1.8, Math.max(0.55, Math.round((zoomLevel + delta) * 100) / 100));
+  document.getElementById('zoomLabel').textContent = Math.round(zoomLevel * 100) + '%';
+  renderDiagram();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  initSvgInteractions();
+  inspectNode('ent_account');
+  renderDiagram();
+});
+</script>
+</body>
+</html>
